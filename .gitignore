@@ -1,0 +1,19 @@
+# Environment variables (may contain credentials)
+.env
+
+# Airflow logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
