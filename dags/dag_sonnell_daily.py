@@ -385,5 +385,5 @@ with DAG(
         python_callable=process_sonnell_trip,
     )
 
-    # Las 3 tasks corren en paralelo — sin dependencias entre sí
-    [t_checkpoin, t_subsystem, t_trip]
+    # Secuencial para controlar el pico de memoria en Docker local
+    t_checkpoin >> t_subsystem >> t_trip
