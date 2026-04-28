@@ -36,6 +36,7 @@ SOURCE_PREFIX = "sonnell/"
 BASE_PATH = "az://synapse/transdev"
 CONTROL_PATH = f"{BASE_PATH}/control_raw_file_status"
 ALERT_EMAIL = "saldabe@ellipsispr.com"
+MAX_LOOKBACK_DAYS = 10
 
 
 # ── Helpers compartidos ────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ def _write_control(records: list, opts: dict) -> None:
     write_deltalake(CONTROL_PATH, df, mode="append", schema_mode="merge", storage_options=opts)
 
 
-def _process_raw(container, file_pattern: str, raw_path: str, opts: dict, log) -> None:
+def _process_raw(container, file_pattern: str, raw_path: str, opts: dict, log, execution_date=None) -> None:
     """Descarga ZIPs del storage, descomprime CSVs y escribe la capa Raw en Delta."""
     processed = _get_processed_files(opts)
     blobs = [
@@ -92,12 +93,29 @@ def _process_raw(container, file_pattern: str, raw_path: str, opts: dict, log) -
         if file_pattern in b.name.split("/")[-1] and b.name.endswith(".zip")
     ]
 
+    cutoff_date = None
+    if execution_date is not None:
+        exec_date = execution_date.date() if hasattr(execution_date, "date") else execution_date
+        cutoff_date = exec_date - datetime.timedelta(days=MAX_LOOKBACK_DAYS)
+
     records, raw_dfs = [], []
     for blob in blobs:
         file_name = blob.name.split("/")[-1]
         if file_name in processed:
             log.info(f"Skipping (ya procesado): {file_name}")
             continue
+
+        # Filtrar blobs fuera de la ventana de lookback usando la fecha del nombre de archivo
+        if cutoff_date is not None:
+            try:
+                file_date = datetime.date(
+                    int(file_name[:4]), int(file_name[4:6]), int(file_name[6:8])
+                )
+                if file_date < cutoff_date:
+                    log.info(f"Skipping (fuera de ventana {MAX_LOOKBACK_DAYS}d): {file_name}")
+                    continue
+            except (ValueError, IndexError):
+                pass  # si el nombre no empieza con YYYYMMDD, procesar igual
 
         log.info(f"Raw: procesando {file_name}")
         try:
@@ -110,7 +128,8 @@ def _process_raw(container, file_pattern: str, raw_path: str, opts: dict, log) -
                     with z.open(csv_name) as f:
                         df = pd.read_csv(f)
                     if df.empty:
-                        raise ValueError(f"CSV vacío: {csv_name}")
+                        log.warning(f"CSV sin datos (esperado): {csv_name} en {file_name}")
+                        continue
                     df["_md_filename"] = file_name
                     df["_md_processed_at"] = datetime.datetime.utcnow()
                     blob_dfs.append(df)
@@ -119,6 +138,9 @@ def _process_raw(container, file_pattern: str, raw_path: str, opts: dict, log) -
                 combined = pd.concat(blob_dfs, ignore_index=True)
                 raw_dfs.append(combined)
                 records.append((file_name, "processed", datetime.datetime.utcnow(), None, len(combined)))
+            else:
+                # ZIP sin datos (CSVs vacíos) — marcar como procesado para no reintentar
+                records.append((file_name, "processed", datetime.datetime.utcnow(), None, 0))
 
         except Exception as e:
             log.error(f"Error procesando {file_name}: {e}")
@@ -203,13 +225,14 @@ def process_sonnell_checkpoin(**context):
     log = logging.getLogger(__name__)
     opts = _storage_options()
     container = _blob_container_client()
+    execution_date = context.get("data_interval_start")
 
     raw_path  = f"{BASE_PATH}/raw_sonnell_checkpoin"
     int_path  = f"{BASE_PATH}/intermediate_sonnell_checkpoin"
     gold_path = f"{BASE_PATH}/sonnell_checkpoin"
 
     # ── Raw ───────────────────────────────────────────────────────────────────
-    _process_raw(container, "sonnell_checkpoin", raw_path, opts, log)
+    _process_raw(container, "sonnell_checkpoin", raw_path, opts, log, execution_date)
 
     # ── Intermediate ──────────────────────────────────────────────────────────
     try:
@@ -244,13 +267,14 @@ def process_sonnell_subsystem(**context):
     log = logging.getLogger(__name__)
     opts = _storage_options()
     container = _blob_container_client()
+    execution_date = context.get("data_interval_start")
 
     raw_path  = f"{BASE_PATH}/raw_sonnell_subsystem"
     int_path  = f"{BASE_PATH}/intermediate_sonnell_subsystem"
     gold_path = f"{BASE_PATH}/sonnell_subsystem"
 
     # ── Raw ───────────────────────────────────────────────────────────────────
-    _process_raw(container, "sonnell_subsystem", raw_path, opts, log)
+    _process_raw(container, "sonnell_subsystem", raw_path, opts, log, execution_date)
 
     # ── Intermediate ──────────────────────────────────────────────────────────
     try:
@@ -285,13 +309,14 @@ def process_sonnell_trip(**context):
     log = logging.getLogger(__name__)
     opts = _storage_options()
     container = _blob_container_client()
+    execution_date = context.get("data_interval_start")
 
     raw_path  = f"{BASE_PATH}/raw_sonnell_trip"
     int_path  = f"{BASE_PATH}/intermediate_sonnell_trip"
     gold_path = f"{BASE_PATH}/sonnell_trip"
 
     # ── Raw ───────────────────────────────────────────────────────────────────
-    _process_raw(container, "sonnell_trip", raw_path, opts, log)
+    _process_raw(container, "sonnell_trip", raw_path, opts, log, execution_date)
 
     # ── Intermediate ──────────────────────────────────────────────────────────
     try:
