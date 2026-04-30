@@ -80,16 +80,20 @@ def _parse_zip(container_client, blob_name: str, file_name: str) -> tuple:
         return None, 0, error_msg
 
 
-def run_raw(**context) -> dict:
+def run_raw(data_interval_start=None) -> dict:
     """
     Incremental RAW ingestion for sonnell_trip.
 
-    Returns a stats dict that is pushed to XCom and consumed by the INTERMEDIATE task
-    to decide whether a full overwrite is warranted on this run.
+    Accepts only the specific context value it needs (data_interval_start) instead of
+    **context to avoid Airflow's lazy Context proxy evaluating deprecated keys on unpack,
+    which causes database calls in a forked process and can deadlock the worker.
     """
+    log.info("RAW: task started (data_interval_start=%s)", data_interval_start)
     opts = storage_options()
+    log.info("RAW: storage options resolved")
     container = blob_container_client(SOURCE_CONTAINER)
-    execution_date = context.get("data_interval_start")
+    log.info("RAW: blob container client ready")
+    execution_date = data_interval_start
 
     # ── Lookback cutoff from execution context ─────────────────────────────────
     # Derived from Airflow's data_interval_start (never datetime.now()) so the DAG

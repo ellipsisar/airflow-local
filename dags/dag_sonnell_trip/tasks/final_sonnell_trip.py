@@ -32,7 +32,7 @@ from dag_sonnell_trip.utils.delta_session import storage_options, read_delta
 log = logging.getLogger(__name__)
 
 
-def run_final(intermediate_stats: dict, **context) -> dict:
+def run_final(intermediate_stats: dict) -> dict:
     """
     Deduplication + full overwrite into sonnell_trip (Gold / Final layer).
 

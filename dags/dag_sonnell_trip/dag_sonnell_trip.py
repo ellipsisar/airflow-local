@@ -28,7 +28,6 @@ from datetime import timedelta
 
 import pendulum
 from airflow.decorators import dag, task
-from airflow.operators.python import get_current_context
 from airflow.utils.email import send_email
 
 from dag_sonnell_trip.config.settings import DEFAULT_ALERT_EMAILS
@@ -99,19 +98,19 @@ default_args = {
 def dag_sonnell_trip():
 
     @task(task_id="raw_sonnell_trip")
-    def raw_task() -> dict:
-        ctx = get_current_context()
-        return run_raw(**ctx)
+    def raw_task(data_interval_start=None) -> dict:
+        # TaskFlow injects data_interval_start automatically from the DAG run context.
+        # Passing only this value (not **ctx) avoids evaluating Airflow's lazy Context
+        # proxy for all deprecated keys, which deadlocks the forked worker process.
+        return run_raw(data_interval_start=data_interval_start)
 
     @task(task_id="intermediate_sonnell_trip")
     def intermediate_task(raw_stats: dict) -> dict:
-        ctx = get_current_context()
-        return run_intermediate(raw_stats, **ctx)
+        return run_intermediate(raw_stats)
 
     @task(task_id="final_sonnell_trip")
     def final_task(intermediate_stats: dict) -> dict:
-        ctx = get_current_context()
-        return run_final(intermediate_stats, **ctx)
+        return run_final(intermediate_stats)
 
     @task(task_id="pipeline_summary")
     def summary_task(raw_stats: dict, intermediate_stats: dict, final_stats: dict) -> None:

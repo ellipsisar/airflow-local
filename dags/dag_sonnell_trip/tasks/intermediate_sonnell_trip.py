@@ -57,7 +57,7 @@ def _cast(raw: pd.DataFrame) -> pd.DataFrame:
     })
 
 
-def run_intermediate(raw_stats: dict, **context) -> dict:
+def run_intermediate(raw_stats: dict) -> dict:
     """
     Full overwrite of intermediate_sonnell_trip with explicitly typed columns.
 
